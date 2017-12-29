@@ -1,0 +1,7 @@
+site/
+site1/
+.ipynb_checkpoints/
+*.ipynb
+*.pyc
+*.log
+.idea/
