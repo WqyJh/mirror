@@ -137,23 +137,28 @@ def postfix_filename(filename, postfix):
 
 
 def content_type_ext(response):
-    content_type = response.headers['Content-Type']
-    if 'text/html' in content_type:
-        return 'html', 'html'
-    elif 'javascript' in content_type:
-        return 'js', 'js'
-    elif 'text/css' in content_type:
-        return 'css', 'css'
-    elif 'image/png' in content_type:
-        return 'img', 'png'
-    elif 'image/jpg' in content_type or 'image/jpeg' in content_type:
-        return 'img', 'jpg'
-    else:
-        filename = os.path.basename(url_to_path(response.url)) or 'file'
-        strs = filename.rsplit('.', maxsplit=1)
-        ext = strs[1] if len(strs) == 2 else ''
-        type = 'font' if ext in 'ttf woff' else 'unknown'
-        return type, ext
+    filename = os.path.basename(url_to_path(response.url)) or 'index'
+    strs = filename.rsplit('.', maxsplit=1)
+    ext = strs[1] if len(strs) == 2 else ''
+    type = 'font' if ext and ext in 'ttf woff2 eot' else 'unknown'
+
+    if type == 'unknown':
+        content_type = response.headers['Content-Type']
+        if 'text/html' in content_type:
+            return 'html', 'html'
+        elif 'javascript' in content_type:
+            return 'js', 'js'
+        elif 'text/css' in content_type:
+            return 'css', 'css'
+        elif 'image/png' in content_type:
+            return 'img', 'png'
+        elif 'image/jpg' in content_type or 'image/jpeg' in content_type:
+            return 'img', 'jpg'
+
+    return type, ext
+
+
+CSS_REGEX = re.compile(r'url\s?\(\s?[\'\"]?(\S+?)[\'\"]?\s?\)')
 
 
 def download_recursively(entity):
@@ -164,9 +169,12 @@ def download_recursively(entity):
     '''
 
     try:
-        response = requests.get(entity.url)
+        response = requests.get(entity.url, timeout=10)
     except Exception as e:
-        print(e)
+        print(entity.url, 'failed\n', e)
+        return None
+
+    if response.status_code != 200:
         return None
 
     entity.type, entity.ext = content_type_ext(response)
@@ -216,8 +224,7 @@ def download_recursively(entity):
 
     if entity.type == 'unknown':
         return None
-
-    if entity.type == 'html':
+    elif entity.type == 'html':
         soup = BeautifulSoup(response.text, 'html.parser')
         for atag in soup.find_all('a', attrs={'href': True}):
             update_tag_link(atag, 'href', entity.url, same_host=True, no_parent=True)
@@ -232,6 +239,16 @@ def download_recursively(entity):
             update_tag_link(imgtag, 'src', entity.url)
 
         file_content = soup.prettify('utf-8')
+    elif entity.type == 'css':
+        text = response.text
+        for url in CSS_REGEX.findall(text):
+            absurl, _ = parse_url(url, entity.url)
+            e = find_entity_by_url(absurl, entity_list) or download_recursively(Entity(url=absurl))
+            if e:
+                newurl = e.url_path
+                text = text.replace(url, newurl, 1)
+                print(newurl)
+        file_content = text.encode('utf-8')
 
     with open(entity.relative_file_path, 'wb') as f:
         f.write(file_content)
