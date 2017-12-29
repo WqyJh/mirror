@@ -29,11 +29,11 @@ class Entity(object):
     @property
     def url_path(self):
         parsed = urlparse(self.url)
-        return urlunparse(parsed._replace(scheme='', netloc='', path='/' + self.relative_file_path))
+        return urlunparse(parsed._replace(scheme='', netloc='', path='../' + self.relative_file_path))
 
     def __repr__(self):
-        return 'Entity[(filename=%s, url=%s, type=%s, ext=%s)]' \
-               % (self.filename, self.url, self.type, self.ext)
+        return 'Entity[(filename=%s, url=%s, type=%s, url_path=%s)]' \
+               % (self.filename, self.url, self.type, self.url_path)
 
 
 download_queue = []
@@ -67,7 +67,7 @@ def url_to_filename(url):
     :param url:
     :return:
     '''
-    return os.path.basename(url_to_path(url)) or 'file'
+    return os.path.basename(url_to_path(url)) or 'index'
 
 
 def has_extension(filename):
@@ -83,7 +83,7 @@ def entity_filename(entity):
 
 
 def url_is_anchor(url):
-    return urlparse(url).fragment
+    return True if urlparse(url).fragment else False
 
 
 def check_scheme(url):
@@ -105,7 +105,7 @@ def url_in_current_dir(url):
     if not path.startswith('/'):
         path = '/' + path
     l = [urlparse(first_url).path or '/', path]
-    return url_base_path == os.path.commonpath(l)
+    return url_base_path in os.path.commonpath(l)
 
 
 def parse_url(url, current_url):
@@ -179,13 +179,18 @@ def download_recursively(entity):
 
     def update_tag_link(tag, key, current_url, same_host=False, no_parent=False):
         '''
+        If the entity corresponding to the tag url doesn't exist, download it and
+        get the file name to generate the new url, which then would be updated to
+        the tag. Download operation is done by recursively call download_recursively().
+
+        If the entity corresponding to the tag url exists, then this tag is likely to
+        be a anchor, just generate a new url for it.
 
         :param tag:
         :param key:
         :param current_url:
         :param same_host:
         :param no_parent:
-        :param ignore_anchor: True means if the url is anchor, don't update it.
         :return:
         '''
         tagurl, is_same_host = parse_url(tag[key], current_url)
@@ -201,58 +206,30 @@ def download_recursively(entity):
         e = find_entity_by_url(tagurl, entity_list) or download_recursively(Entity(url=tagurl))
 
         if e:
-            tag[key] = e.url_path
-            print('newurl', tag[key])
+            newurl = e.url_path
+            if url_is_anchor(tagurl):
+                fragment = urlparse(tagurl).fragment
+                newurl = urlunparse(urlparse(newurl)._replace(fragment=fragment))
+
+            tag[key] = newurl
+            print('newurl', newurl)
+
+    if entity.type == 'unknown':
+        return None
 
     if entity.type == 'html':
         soup = BeautifulSoup(response.text, 'html.parser')
         for atag in soup.find_all('a', attrs={'href': True}):
-            # aurl, same_host = parse_url(atag['href'], entity.url)
-            #
-            # # Same-host and No-parent constraint
-            # if not (url_in_current_dir(aurl) and same_host):
-            #     continue
-            #
-            # e = find_entity_by_url(aurl, entity_list)
-            # if not e and not url_is_anchor(aurl):
-            #     e = download_recursively(Entity(url=aurl))
-            #
-            # if e:
-            #     atag['href'] = urljoin('/', e.relative_path)
-            #     print('newurl', atag['href'])
             update_tag_link(atag, 'href', entity.url, same_host=True, no_parent=True)
 
         for csstag in soup.find_all(name='link', rel='stylesheet'):
-            # cssurl, _ = parse_url(csstag['href'], entity.url)
-            #
-            # e = find_entity_by_url(cssurl, entity_list) or download_recursively(Entity(url=cssurl))
-            # if e:
-            #     csstag['href'] = urljoin('/', e.relative_path)
-            #     print('newurl', csstag['href'])
             update_tag_link(csstag, 'href', entity.url)
 
         for scripttag in soup.find_all(name='script', attrs={'src': True}):
-            # scripturl, _ = parse_url(scripttag['src'], entity.url)
-            #
-            # e = find_entity_by_url(scripturl, entity_list) or download_recursively(Entity(url=scripturl, type='js'))
-            # if e:
-            #     scripttag['src'] = urljoin('/', e.relative_path)
-            #     print('newurl', scripttag['src'])
             update_tag_link(scripttag, 'src', entity.url)
 
         for imgtag in soup.find_all(name='img'):
-            # imgurl, _ = parse_url(imgtag['src'], entity.url)
-            #
-            # e = find_entity_by_url(imgurl, entity_list) or download_recursively(Entity(url=imgurl, type='img'))
-            # if e:
-            #     imgtag['src'] = urljoin('/', e.relative_path)
-            #     print('newurl', imgtag['src'])
             update_tag_link(imgtag, 'src', entity.url)
-
-        # print([atag['href'] for atag in soup.find_all('a', attrs={'href': True})])
-        # print([csstag['href'] for csstag in soup.find_all(name='link', rel='stylesheet')])
-        # print([scripttag['src'] for scripttag in soup.find_all(name='script', attrs={'src': True})])
-        # print([imgtag['src'] for imgtag in soup.find_all(name='img')])
 
         file_content = soup.prettify('utf-8')
 
