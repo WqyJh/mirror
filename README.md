@@ -2,7 +2,7 @@
 
 This is a python script for mirroring a static website.
 
-Currently, it could download all html documents and all the js, css, image files it needs.
+Currently, it could download all html documents and all the js, css, image and font files it needs.
 
 ## Requirements
 

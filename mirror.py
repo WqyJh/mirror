@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import sys
 import re
@@ -169,7 +170,7 @@ def download_recursively(entity):
     '''
 
     try:
-        response = requests.get(entity.url, timeout=10)
+        response = requests.get(entity.url, timeout=30)
     except Exception as e:
         print(entity.url, 'failed\n', e)
         return None
